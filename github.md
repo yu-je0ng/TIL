@@ -30,7 +30,7 @@ $ git commit -m "connect github"
  create mode 100644 github.md
  ```
 
-## [에러] 
+## [에러1] 
  ```
  user@DESKTOP-ABOICSH MINGW64 /c/TIL (master)
 $ git push origin master
@@ -51,3 +51,20 @@ hint: See the 'Note about fast-forwards' in 'git push --help' for details.
 ```
 git pull origin master
 ```
+
+### [연관에러]
+pull 명령 실행시 아래의 문구로 인해 진행되지 않으면
+```
+fatal: refusing to merge unrelated histories
+```
+다음 명령으로 실행해야 됨.
+```
+git pull origin master --allow-unrelated-histories
+```
+
+[관련 자료](https://gdtbgl93.tistory.com/63)
+`--allow-unrelated-histories`
+: 이 명령 옵션은 이미 존재하는 두 프로젝트의 기록(history)을 저장하는 드문 상황에 사용된다고 한다. 즉, git에서는 서로 관련 기록이 없는 이질적인 두 프로젝트를 병합할 때 기본적으로 거부하는데, 이것을 허용해 주는 것이다.
+
+## [다시] 로컬 저장소 파일 업로드.
+
