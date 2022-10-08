@@ -68,3 +68,9 @@ git pull origin master --allow-unrelated-histories
 
 ## [다시] 로컬 저장소 파일 업로드.
 
+```
+user@DESKTOP-ABOICSH MINGW64 /c/TIL (master)
+$ git add github.md
+$ git commit -m "error git_pull"
+$ git push origin master
+```
