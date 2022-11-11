@@ -57,11 +57,11 @@ $ git stash apply --index
 
     -   git stash apply
 
-        ![Untitled](https://s3-us-west-2.amazonaws.com/secure.notion-static.com/afeb944e-4d33-442e-bf4f-d02d8ba4f0cd/Untitled.png)
+        ![img](C:\TIL\Github\assets\apply-option-notinclude.png)
 
     -   git stash apply -index
 
-        ![Untitled](https://s3-us-west-2.amazonaws.com/secure.notion-static.com/2bc4bebb-0c5f-4fb6-a495-4f00a3ee150a/Untitled.png)
+        ![img](C:\TIL\Github\assets\apply-option-include.png)
 
 -   **수정했던 파일들을 복원할 때 반드시 stash했을 때와 같은 브랜치일 필요 없음.**
 
