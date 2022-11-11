@@ -1,1 +1,0 @@
-[파이썬 문법 5 - 람다(lambda) 함수 (tistory.com)](https://offbyone.tistory.com/73)
