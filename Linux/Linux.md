@@ -839,3 +839,524 @@ cat /proc/cpuinfo
 
 ### 13.1.2 CPU 부하관리하기
 
+#### top
+
+- 프로세스 정보를 업데이트해가며 보여줌.
+
+- **프로세스 종료**
+
+  ```
+  # systemd가 관리하는 프로세스 종료
+  systemctl stop mysqld
+  
+  # 부팅시 자동으로 실행되지 않게 하는 명령어
+  systemctl disable mysqld
+  
+  # systemd가 관리하는 프로세스가 아니거나 systemctl 명령으로 종료하지 못할 때.
+  kill <PID> # kill -q : -q옵션으로 프로세스 강제 종료 가능.
+  killall <프로세스 이름> # killall mysqld
+  ```
+
+  - 배포판에 따라서 killall 명령을 사용하려면 psmisc 패키지를 설치해야 됨.
+  - kill은 PID기반으로 프로세스 하나만 종료함.
+  - killall은 프로세스를 생성한 프로그램 이름을 이용해 그 프로그램이 생성한 프로세스 모두를 종료함.
+    - `killall mysqld` : 여러 사용자에 의해 mysql 프로세스가 여러 개 실행되었다면 해당 프로세스들이 모두 종료됨.
+
+- top에 나오는 CPU관련 측정 기호들
+
+  | 계측기호 | 의미                                                |
+  | -------- | --------------------------------------------------- |
+  | us       | 높은 우선순위(nice 되지 않은)프로세스를 실행한 시간 |
+  | sy       | 커널 프로세스를 실행한 시간                         |
+  | ni       | 낮은 우선순위(nice 된)프로세스를 실행한 시간        |
+  | id       | 유휴(idle)시간                                      |
+  | wa       | I/O 이벤트가 완료될 때까지 대기한 시간              |
+  | hi       | 하드웨어 인터럽트를 관리하는데 걸린 시간            |
+  | si       | 소프트웨어 인터럽트를 관리하는데 걸린 시간          |
+  | st       | 이 VM으로부터 하이퍼바이저(호스트)가 빼앗아간 시간  |
+
+#### nice로 우선순위 설정하기
+
+- 프로세스가 생성될 때 기본으로 nice 값으로 0이 부여되지만, 이 값을 -20에서 19까지의 값으로 변경가능함.
+
+- nice값이 커질 수록 프로세스는 다른 프로세스에 친절하게(nice) 양보함.
+
+  - 이와 반대로 nice값이 작을수록 프로세스는 다른 프로세스가 어떻든간에  자기에게 필요한 리소스를 모두 사용하려고 함.
+
+  ```
+  # PID 2145인 프로세스의 nice값을 15로 변경함.
+  renice 15 -p 2145
+  ```
+
+  
+
+## 13.2 메모리 문제
+
+- IT기술의 엄청난 발전에도 불구하고 RAM(램) 그 자체는 여전히 예전 방식으로 사용됨.
+  - 컴퓨터는 OS 커널과 여타 프로그램들을 휘발성인 램 모듈에 올려서 핵심 컴퓨팅 작업의 속도를 올림.
+
+### 13.2.1 메모리 상태 평가하기
+
+- 일반적으로 메모리가 부족한 시스템은 요청을 처리하지 못하거나 그냥 느려짐.
+
+#### free 
+
+- /proc/meminfo 파일을 분석해 사용할 수 있는 물리적인 메모리 전체(7.5GB)와 현재 사용량을 보여줌.
+
+  ```
+  ubuntu@ubuntu:~$ free -h
+                total        used        free      shared  buff/cache   available
+  Mem:          7.5Gi       1.6Gi       5.2Gi       1.0Mi       837Mi       5.7Gi
+  Swap:         2.0Gi          0B       2.0Gi
+  ```
+
+  - shared : dev와 sys등의 의사 파일 시스템을 유지하는데 tempfs가 사용하는 메모리.
+  - buff/cache : 커널에서 블록 장치에 입출력할 때 사용하는 메모리.
+  - used : 시스템 프로세스가 사용하는 메모리.
+  - available : 현재 디스크 캐시에 사용하고 있지만, 스왑(swap) 메모리에 밀어낼 필요 없이 애플리케이션 실행에 바로 사용할 수 있는 메모리의 추정 크기
+    - 리눅스는 메모리가 정말 부족하다고 생각되는 시점이 아닌 이상 free에 있는 것을 우선 사용하고 보통은 성능 향상을 위해 buff/cache메모리를 많이 사용함.
+    - 따라서 실제 가용 메모리는 free + buff/cache 메모리로 판단해야 됨.
+
+#### vmstat 
+
+- 시스템이 스왑 메모리를 상용하는 방법을 대략적으로 볼 수 있음.
+
+  ```
+  # 30초 간격으로 4번 읽어서 확인.
+  ubuntu@ubuntu:~$ vmstat 30 4
+  procs -----------memory---------- ---swap-- -----io---- -system-- ------cpu-----
+   r  b   swpd   free   buff  cache   si   so    bi    bo   in   cs us sy id wa st
+   0  0      0 5402380  74468 783380    0    0    35     7  172  342  1  1 98  0  0
+   0  0      0 5392648  74508 783432    0    0     0    16  436  863  2  2 96  0  0
+   1  0      0 5392648  74572 783432    0    0     0    13  343  673  1  0 99  0  0
+   0  0      0 5392648  74620 783432    0    0     0     7  344  675  1  1 99  0  0
+  ```
+
+  - 실제 시스템에서는 결과의 정확도를 높이기 위해 두 시간 정도 실행하기도 함.
+  - 중요 : `si` 와 `so`
+    - si : 스왑 장치에서 메모리로 전송하는 데이터의 양
+    - so : 메모리에서 스왑 장치로 전송한 데이터의 양
+  - 메모리와 스왑 장치 간에 데이터가 꾸준히 이동한다면 성능 문제가 없더라도 램 추가를 고려해야 됨.
+
+
+
+## 13.3 스토리지 가용성 문제
+
+#### df 
+
+- 디스크 공간 확인
+
+  ```
+  ubuntu@ubuntu:~$ df -h
+  Filesystem      Size  Used Avail Use% Mounted on
+  udev            3.8G     0  3.8G   0% /dev
+  tmpfs           773M  1.9M  771M   1% /run
+  /dev/sda5        59G   30G   27G  53% / # 루트 파티션 항목
+  tmpfs           3.8G     0  3.8G   0% /dev/shm
+  tmpfs           5.0M  4.0K  5.0M   1% /run/lock
+  tmpfs           3.8G     0  3.8G   0% /sys/fs/cgroup # 의사 파일 시스템으로 사용량이 0바이트임에 주의한다.
+  /dev/loop0      128K  128K     0 100% /snap/bare/5
+  /dev/loop1       62M   62M     0 100% /snap/core20/1611
+  /dev/loop2       64M   64M     0 100% /snap/core20/1695
+  /dev/loop3      347M  347M     0 100% /snap/gnome-3-38-2004/115
+  /dev/loop5       92M   92M     0 100% /snap/gtk-common-themes/1535
+  /dev/loop4       55M   55M     0 100% /snap/snap-store/558
+  /dev/loop6      347M  347M     0 100% /snap/gnome-3-38-2004/119
+  /dev/loop7       48M   48M     0 100% /snap/snapd/17336
+  /dev/loop8       46M   46M     0 100% /snap/snap-store/599
+  /dev/loop9       50M   50M     0 100% /snap/snapd/17576
+  /dev/sda1       511M  4.0K  511M   1% /boot/efi
+  tmpfs           773M   20K  773M   1% /run/user/1000
+  ```
+
+  - Use% 열이 0%인 장치들은 실제 디스크 공간을 상용하지 않으므로 무시해도 됨.
+    - 그 장치들은 의사 장치들임.
+    - 그러나 루트 파티션(/)등 다른 장치들에는 주의해야 됨.
+      - 현재 53%(30G/59G) 가용되고 있음.
+
+###  13.3.1 inode 제한
+
+- 모든 파일 시스템 개체는 고유한 inode에 들어 있는 메타데이터를 통해 식별하고 관리됨.
+
+- 시스템에 들어갈 수 있는 inode의 개수는 제한되어 있어 물리적 공간이 남아 있어도 inode가 먼저 소진 될 수 있음.
+
+  - inode 개수는 파일 시스템을 생성할 때 영구적으로 결정됨.
+    - inode 자체도 디스크 공간을 차지하므로 mkfs.exf4등의 도구로 파일 시스템을 생성할 때 파일을 최대한 많이 저장하되 디스크 공간 낭비를 최소로 하는 타협점을 찾아야 됨.
+
+  ```
+  ubuntu@ubuntu:~$ df -i
+  Filesystem      Inodes  IUsed   IFree IUse% Mounted on
+  udev            979286    472  978814    1% /dev
+  tmpfs           988909    953  987956    1% /run
+  /dev/sda5      3899392 514116 3385276   14% /
+  tmpfs           988909      1  988908    1% /dev/shm
+  tmpfs           988909      5  988904    1% /run/lock
+  tmpfs           988909     19  988890    1% /sys/fs/cgroup
+  /dev/loop0          29     29       0  100% /snap/bare/5
+  /dev/loop1       11796  11796       0  100% /snap/core20/1611
+  /dev/loop2       11897  11897       0  100% /snap/core20/1695
+  /dev/loop3       18121  18121       0  100% /snap/gnome-3-38-2004/115
+  /dev/loop5       76208  76208       0  100% /snap/gtk-common-themes/1535
+  /dev/loop4       17311  17311       0  100% /snap/snap-store/558
+  /dev/loop6       18272  18272       0  100% /snap/gnome-3-38-2004/119
+  /dev/loop7         486    486       0  100% /snap/snapd/17336
+  /dev/loop8       17275  17275       0  100% /snap/snap-store/599
+  /dev/loop9         491    491       0  100% /snap/snapd/17576
+  /dev/sda1            0      0       0     - /boot/efi
+  tmpfs           988909     81  988828    1% /run/user/1000
+  ```
+
+  - `/dev/sda5      3899392 514116 3385276   14% /` : 루트 파티션으로 해당 파티션의 inode 상태가 가장 중요함.
+
+  - inode 사용률의 최대치에서 10%나 20% 정도가 남으면 조치를 취해야 됨.
+
+    - 파일이 가장 많이 들어있는 디렉터리를 찾기(파일이 많은 곳에 inode 뭉치가 생기기 떄문)
+
+      ```
+      cd /
+      find . -xdev -type f | cut -d "/" -f 2 | sort | uniq -c | sort -n
+      ```
+
+      | 구문       | 기능                                                     |
+      | ---------- | -------------------------------------------------------- |
+      | .          | 현재 디렉터리에서 아래로 내려가면서 검색한다             |
+      | -xdev      | 현재 장치 안에서만 검색한다                              |
+      | -type f    | file 형의 개체를 검색한다                                |
+      | cut -d "/" | 구분 문자(여기에서는 /) 사이의 텍스트를 제거한다.        |
+      | -f 2       | 찾아낸 항목에서 두 번째 필드를 선택한다.                 |
+      | sort       | 찾아낸 항목들을 정렬하고 표준 출력장치(stdout)로 보낸다. |
+      | uniq -c    | sort가 보낸 항목들의 줄 수를 센다                        |
+      | sort -n    | 메시지를 숫자 순서대로 출력한다.                         |
+
+      - find 명령어는 파일과 디렉터리를 수만 개 검색해야 하므로 시간이 상당히 소요됨.
+
+
+
+### 13.3.2 해결책
+
+- 예전 디렉터리 삭제
+
+  ```
+  dpkg --configure -a
+  ```
+
+- 예전 커널 헤더 자체를 삭제
+
+  ```
+  apt autoremove
+  ```
+
+  - CentOS : yum-utils 패키지 설치 후 아래 명령어 실행
+
+    ```
+    # --count=2 : 최신 커널 두개만 남기고 모두 삭제
+    package-cleanup --oldkernels --count=2
+    ```
+
+    
+
+## 13.4 네트워크 문제
+
+- 연결을 살아 있지만 네트워크 부하가 커지는 문제.
+
+### 13.4.1 대역폭 측정
+
+#### iftop
+
+- 네트워크 인터페이스를 통과하는 활동이 많은 리소스를 계속 업데이트하면서 보여줌
+
+  ```
+  sudo apt install iftop
+  iftop -i eth0
+  ```
+
+  - 컴퓨터와 원격 호스트 간의 네트워크 연결과 이 연결이 사용하는 대역폭을 나열함.
+  - 연결은 인바운드/아웃바운드 쌍으로 나열됨.
+
+
+
+### 13.4.3 tc로 네트워크 트래픽 제어하기
+
+- 트레픽 셰이핑(traffic shaping)
+  - 특정 서비스를 완전히 종료하는 대신 프로세스에 대역폭 상한선을 지정하는 방법.
+  - 프로세스 리소스 사용을 제어하는 nice와 비슷한 방법으로 대역폭을 관리할 수 있어 한정된 대역폭을 시스템 전반에 전략적으로 분배할 수 있음.
+
+#### tc
+
+````
+# 원격사이트에 ping을 보내 응답시간 확인.
+ping duckduckgo.com 
+... ... ... ... ... ... ... time=35.6 ms 
+````
+
+- time 값은 하나의 패킷이 갔다오는데 걸리는 시간을 나타냄.
+
+```
+# 네트워크 인터페이스(eth0)에 현재 규칙을 모두 나열
+tc -s qdisc ls dev eth0
+qdisc noqueue 0 : root refcnt 2
+...
+```
+
+- qdisc는 네트워크로 향하는 데이터 패킷이 반드시 지나야 하는 큐인 대기 행렬 규칙(queueing discipline)을 나타냄.
+
+```
+# 모든 트래픽을 100밀리초 지연하는 규칙 추가
+tc qdisc add dev eth0 root netem delay 100ms
+```
+
+```
+tc -s qdisc ls dev eth0
+qdisc netem 8001:
+root refcnt 2 limit 1000 delay 100.0ms # qdisc에 트래픽을 100밀리초 지연하는 규칙 생김.
+...
+```
+
+```
+ping duckduckgo.com 
+... ... ... ... ... ... ... time=153 ms
+```
+
+```
+# 시스템 원래 상태로 복구(규칙 삭제)
+tc qdisc del dev eth0 root
+```
+
+
+
+## 14.1 TCP/IP 주소 체계 이해하기
+
+- 네트워크 연결에서 장애 문제를 해결하기 위해서는 인터넷 프로토콜 스위트(suite)에 대한 기본 지식이 있어야 함. 
+  - 인터넷 프로토콜 스위트는 전송 제어 프로토콜(TCP, Transmission Control Protocol) 와 인터넷 프로토콜(IP, Internet Protocol) 간단히 TCP/IP하고 하는 프로토콜임.
+
+- IP : 네트워크의 가장 기본적인 단위
+  - 연결 장치에는 모두 이 주소가 할당되어 있어야 통신할 수 있음.
+  - 또한 전체 네트워크를 통틀어서 IP주소는 고유한 숫자여야 함.
+  - IPv4 : 수십년간 사용된 표준 주소 체제
+    - 각 주소는 네 개의 8비트 옥텟(octet)으로 구성되어 총 32비트로 표현됨.
+    - 각 옥텟은 0에서 255까지의 숫자로, 전형적인 IP주소는 아래와 같이 표현됨.
+      - 154.39.230.205
+    - 이론적으로 IPv4 주소 체계에서 만들 수 있는 주소는 40억 개가 약간 넘음
+      - 현재는 인터넷이 커짐에 따라 인터넷에 연결하려는 모든 장치에 고유한 IPv4 주소를 할당하기 어려워짐.
+      - 현재 사용되는 스마트폰만 10억개가 넘고, 여기에 수백만 대의 서버, 라우터, PC, 노트북, IOT장치 등이 있음.
+  - IPv6 와 NAT(네트워크 주소 변환, Network Address Translation) 이 등장함.
+
+### 14.1.1 NAT 주소란
+
+- 네트워크에 접근할 수 있는 고유한 주소를 모든 장치에 할당하는 대신 라우터가 사용하는 공인 IP주소(public IP address) 하나를  장치들이 공유함
+  - 로컬 장치에서는 사설(private)IP 주소를 사용하여 트래픽이 이동함.
+  - 네트워크 세그먼트를 이용하여 네트워크 리소스를 여러 하위 그룹으로 분할함.
+
+### 14.1.2 NAT 주소 체계 이해하기
+
+- 집에 있는 와이파이에 연결된 노트북의 브라우저에서 인터넷 사이트를 방문할 때 본인은 인터넷 서비스 제공자(ISP, Internet Service Provider)가 설치란 DSL 모뎀/라우터에 할당된 공인 IP주소를 상용함.
+  - 그리고 이 와이파이에 연결된 장치들을 모두 인터넷을 서핑할 때 공인IP주소를 사용함.
+  - 라우터가 동적 호스트 설정 프로토콜(DHCP, Dynamic Host Configuration Protocol)로 고유한 사설IP 주소(NAT)를 각 로컬 장치에 할당함. 
+    - 사설 IP주소는 로컬 환경안에서만 고유함.
+  - 이러한 방식으로 로컬 장치들은 서로 간에 완전히 신뢰할 수 있는 통신이 가능함.
+- NAT 프로토콜은 사설 IP주소에 사용하는 세 개의 IPv4 주소 대역을 따로 지정하고 있음.
+  - 10.0.0.0 ~ 10.255.255.255
+  - 172.16.0.0 ~ 172.31.255.255
+  - 192.168.0.0 ~ 192.168.255.255
+- 로컬 네트워크 관리자는 위의 세 개의 범위의 주소 중 아무 주소나 자유롭게 사용할 수 있음.
+- 일반적으로 주소는 더 작은 네트워크 블록(즉 서브넷)으로 나누어 사용하는데, 이때 네트워크 주소는 주소 중 왼쪽 부분에 있는 옥텟으로 식별되고 네트워크 주소를 제외한 나머지 옥텟을 개별 장치에 사용함.
+  - 예시) 192.168.1에 서브넷을 만들면 이 서브넷에 있는 장치들은 모두 192.168.1(주소 중 네트워크 부분)로 시작하고 2와 254 사이의 고유한 옥텟 하나로 끝남.
+
+## 14.2 네트워크 연결 설정하기
+
+- 인터넷 장애는 다음과 같은 원인에서 발생할 수 있음
+  - 로컬 컴퓨터의 하드웨어나 OS장애
+  - 물리적인 케이블, 라우팅, 무선 연결등의 장애
+  - 로컬 라우팅 소프트웨어의 설정 문제
+  - ISP 수준에서의 장애
+  - 인터넷 자체의 장애
+
+#### 아웃 바운드 연결 문제의 해결 절차 흐름도
+
+- 로컬 컴퓨터가 외부 리소스에 접근할 때 생기는 문제를 해결하고 나서 외부 클라이언트나 사용자가 우리가 관리하는 서버 리소스에 접근할 떄 생기는 문제를 해결하는 순서
+
+![image-20221127005740097](C:\Users\yujeong\OneDrive\바탕 화면\TIL\assets\image-20221127005740097.png)
+
+
+
+## 14.3 아웃바운드 연결 문제
+
+- 컴퓨터에 IP주소가 할당되지 않으면 네트워크의 구성원이 될 수 없음.
+
+#### ip addr
+
+```
+ubuntu@ubuntu:~$ ip addr
+1: lo: <LOOPBACK,UP,LOWER_UP> mtu 65536 qdisc noqueue state UNKNOWN group default qlen 1000
+    link/loopback 00:00:00:00:00:00 brd 00:00:00:00:00:00
+    inet 127.0.0.1/8 scope host lo
+       valid_lft forever preferred_lft forever
+    inet6 ::1/128 scope host 
+       valid_lft forever preferred_lft forever
+2: ens33: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc fq_codel state UP group default qlen 1000
+    link/ether 00:0c:29:87:32:c1 brd ff:ff:ff:ff:ff:ff
+    altname enp2s1
+    inet 192.168.232.128/24 brd 192.168.232.255 scope global dynamic noprefixroute ens33
+       valid_lft 1467sec preferred_lft 1467sec
+    inet6 fe80::9c81:99cb:9343:6a8e/64 scope link noprefixroute 
+       valid_lft forever preferred_lft forever
+```
+
+- `state UNKNOWN group default qlen 1000` : 로컬(localhost) 리소스에 접근할 수 있게 하는 루프백(lo) 인터페이스
+
+- `inet 127.0.0.1/8 scope host lo` : 루프백 장치가 사용하는 IP주소가 127.0.0.1임에 주의(표준 네트워킹 관례에 따름)
+
+- `state UP group default qlen 1000` : 인터페이스 활성화(UP) 상태
+- `inet 192.168.232.128/24 brd 192.168.232.255` : 컴퓨터의 현재 IP주소가 inet 값으로 출력됨.
+
+
+
+### 14.3.1 네트워크 상태  추적하기
+
+- 네트워크 어댑터(network adapter)는 네트워크 인터페이스 카드(NIC, Network Interface Card)라고 함.
+
+#### lspci
+
+- 현재 컴퓨터에 PCI 인터페이스로 연결된 장치들을 나열
+  - PCI (Peripheral Component Interconnect) : 주변 장치를 PCI 버스를 통해 컴퓨터 메인보드 위에 있는 CPU에 연결하는 하드웨어 표준임.
+    - PCI Express(PCIe) 같은 새로운 표준도 있으며, 각 고유한 폼 팩터(form factor)로 메인보드와 물리적으로 연결함.
+
+#### lshw
+
+- 컴퓨터 하드웨어 프로 파일을 모두 보여줌.
+- `lshw -class network` : 네트워킹에 연결된 프로파일만 보여줌.
+- `dmesg | grep -A 2 Ethernet`
+  - dmesg에서 lspci가 출력한 Ethernet이라는 단어를 걸러서 출력.
+    - dmesg : 장치에 관련된 커널 이벤트를 보여줌.
+    - -A 2 : dmesg 로그에서 검색 문자열(Ethernet)이 포함한 줄과 바로 뒤 두 줄을 같이출력.
+
+
+
+### 14.3.2 IP 주소 할당하기
+
+- 누군가 정적 주소를 수작업으로 할당하는 방법
+- DHCP 서버가 현재 사용하지 않는 주소를 장치에 자동으로 할당하는 방법.
+
+
+
+#### 네트워크 라우트 정의 - ip route
+
+- ip route :  로컬 네트워크와 컴퓨터가 게이트웨이 라우터로 사용하는 장치의 IP주소가 들어있는 라우팅 테이블을 보여줌.
+
+  ```
+  ubuntu@ubuntu:~$ ip route
+  default via 192.168.232.2 dev ens33 proto dhcp metric 100 
+  169.254.0.0/16 dev ens33 scope link metric 1000 
+  192.168.232.0/24 dev ens33 proto kernel scope link src 192.168.232.128 metric 100 
+  ```
+
+  - `default via 192.168.232.2` : 로컬 컴퓨터가 외부 네트워크에 접근하는 통로인 게이트웨이 라우터의 IP주소
+  - `link src 192.168.232.128 metric 100 ` : 로컬 NAT 네트워크의 주소(192.168.x) 와 넷마스크(/24)
+
+- 라우트 생성하기
+
+  - (같은 라우터를 사용하는)다른 컴퓨터가 사용하는 라우터 주소에 따른 생성.
+
+  ```
+  # 다른 컴퓨터 192.168.1.34일때
+  ip route add default via 192.168.1.1 dev eth0
+  
+  # 다른 컴퓨터 10.0.0.45일때
+  ip route add default via 10.0.0.1 dev eth0
+  ```
+
+
+
+#### 동적 주소 요청-DHCP
+
+- DHCP주소를 요청하는 가장 좋은 방법 : dhclient로 네트워크에 있는 DHCP 서버를 찾아서 동적 주소를 요청하는 것.
+
+  ```
+  # 네트워크 인터페이스 이름이 enp0s3일때
+  dhclient enp0s3
+  ```
+
+#### 정적 주소 설정-ip
+
+- 일시적으로 정적 ip주소를 할당할 수 있으나, 다음번 부팅시 사라짐.
+
+  ```
+  ip addr add 192.168.1.10/24 dev eth0
+  ```
+
+- 영구적 저장 : /etc/network/interfaces 파일 수정(ubuntu).
+
+  - 변경한 설정을 바로 적용하려면 네트워크를 재시작해야 됨.
+
+
+
+### 14.3.3 DNS 서비스 설정하기.
+
+#### DNS란
+
+- 도메인 네임 시스템(DNS, Domain Name System) : 사람이 읽기 편한 텍스트 형태와 컴퓨터에 맞는 디지털 형태 사이의 변환을 수행하는 도구
+  - 도메인 : 네트워크에 연결된 특정 리소스 그룹을 설명하는 단어, 특히 사람이 읽기 쉬운 이름으로 식별하 리소스를 의미함.
+
+### 14.3.4 막힌 곳 뚫기
+
+#### traceroute
+
+- 패킷이 목적지까지 가는 경로를 추적함.
+- 경로 어딘가에 트래픽을 막는게 있다면 tranceroute는 어디에서 막혔는지 보여줌.
+  - 연결에 문제가 있다면 목적지에 도달하기 전에 어떤 경유지에서 중단될 것.
+  - 별표(*)만 출력되는 줄은 패킷이 돌아오지 못함을 의미
+  - 완전히 실패하면 보통 오류 메시지가 출력됨.
+
+```
+sudo apt install inetutils-traceroute
+traceroute google.com
+traceroute to google.com (172.217.161.206), 64 hops max
+  1   192.168.232.2  0.759ms  0.514ms  0.522ms 
+  2   *  *  * 
+  3   *  *  * 
+...
+```
+
+
+
+## 14.4 인바운드 연결 문제
+
+### 14.4.1 인터넷 연결 상태 검사하기 : netstat
+
+#### netstat -l
+
+- 현재 열려 있는 소켓을 모두 보여줌.
+
+  ```
+  sudo apt install net-tools
+  
+  # 컴퓨터를 검사해 80번 포트를 들고 있는 웹 서비스를 찾아냄.
+  netstat -l | grep http
+  ```
+
+#### netstat -i 
+
+- 네트워크 인터페이스를 나열함.
+  - ip addr과 비슷한 기능이나 netstat는 패킷을 얼마나 많이 받고(RX) 보내는지(TX)를 보여줌.
+  - OK는 오류 없이 전송된 패킷을, ERR은 손상된 패킷을, DRP는 버려진 패킷들을 나타냄
+
+
+
+### 14.4.2 외부 연결 스케닝 : netcat
+
+- netcat : nc 명령으로 호출가능함.
+
+#### nc
+
+- nc : 원격 주소에 연결할 수 있는지 알려줌.
+
+  ```
+  # 원격 서버에서 443번과 80번 포트를 들고 있는 서비스를 검사함.
+  nc -z -v bootstrap-it.com 443 80
+  ```
+
+  - -z : 연결을 시도하지 않고 네트워크를 듣고 있는 데몬을 검사하는 결과를 보여줌.
+  - -v : 메시지를 더 자세히 출력하라는 의미.
+  - 443 80 : 검사할 포트 지정.
+    - HTTP와 HTTPS 중 하나 또는 둘 다 연결 할 수 없으면 검사는 실패함.
+
